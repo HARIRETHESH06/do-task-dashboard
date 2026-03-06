@@ -35,10 +35,10 @@ const Register: React.FC = () => {
       return;
     }
 
-    if (password.length < 4) {
+    if (password.length < 6) {
       toast({
         title: 'Validation Error',
-        description: 'Password must be at least 4 characters long.',
+        description: 'Password must be at least 6 characters long.',
         variant: 'destructive',
       });
       return;

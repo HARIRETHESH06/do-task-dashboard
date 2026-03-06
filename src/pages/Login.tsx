@@ -45,7 +45,7 @@ const Login: React.FC = () => {
       } else {
         toast({
           title: 'Login Failed',
-          description: 'Invalid email or password. Try: admin@example.com, manager@example.com, or employee@example.com',
+          description: 'Invalid email or password. Use password: password123',
           variant: 'destructive',
         });
       }
@@ -62,17 +62,23 @@ const Login: React.FC = () => {
 
   const handleQuickLogin = async (email: string) => {
     setEmail(email);
-    setPassword('demo1234');
+    setPassword('password123');
     setIsLoading(true);
 
     try {
-      const success = await login(email, 'demo1234');
+      const success = await login(email, 'password123');
       if (success) {
         toast({
           title: 'Welcome!',
           description: 'Quick login successful.',
         });
         navigate('/dashboard');
+      } else {
+        toast({
+          title: 'Login Failed',
+          description: 'Make sure the backend is running and DB is seeded.',
+          variant: 'destructive',
+        });
       }
     } finally {
       setIsLoading(false);

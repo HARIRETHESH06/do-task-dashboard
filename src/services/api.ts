@@ -1,273 +1,290 @@
 /**
- * API Service Layer
- * 
- * This file provides a centralized API wrapper for all backend calls.
- * Currently uses mock data, but can be easily switched to real API endpoints.
- * 
- * Configuration:
- * - Set API_BASE_URL to your backend server URL
- * - All endpoints are relative to this base URL
+ * API Service Layer — REAL backend implementation
+ *
+ * All calls go to /api/* which Vite proxies to http://localhost:5000 in dev.
+ * JWT token is read from localStorage and sent as Authorization: Bearer <token>.
  */
 
-import { Task, Report, User, TaskFilters, ReportFilters, DashboardStats, ApiResponse } from '@/types';
-import { mockTasks, mockReports, mockUsers, mockActivities, getEnrichedTasks, getEnrichedReports, getEnrichedActivities, getUserById } from '@/data/mockData';
+import type {
+  Task,
+  Report,
+  User,
+  UserRole,
+  TaskFilters,
+  ReportFilters,
+  DashboardStats,
+  ApiResponse,
+  Activity,
+} from '@/types';
 
-// API Configuration - Change this when connecting to real backend
-const API_BASE_URL = '/api';
+// ─── Token helpers ─────────────────────────────────────────────────────────────
 
-// Simulated API delay for realistic UX
-const simulateDelay = (ms: number = 500) => new Promise(resolve => setTimeout(resolve, ms));
+const TOKEN_KEY = 'taskReportingToken';
 
-// ============================================
+export const getToken = (): string | null => localStorage.getItem(TOKEN_KEY);
+export const setToken = (token: string) => localStorage.setItem(TOKEN_KEY, token);
+export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+
+// ─── Base fetch wrapper ────────────────────────────────────────────────────────
+
+async function apiFetch<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<ApiResponse<T>> {
+  const token = getToken();
+
+  const headers: Record<string, string> = {
+    ...(options.headers as Record<string, string>),
+  };
+
+  // Attach JWT if available (skip for FormData — browser sets Content-Type with boundary)
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  // Only set Content-Type to JSON when body is NOT FormData
+  if (!(options.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  try {
+    const res = await fetch(`/api${endpoint}`, { ...options, headers });
+    const json: ApiResponse<T> = await res.json();
+
+    // Surface HTTP errors as { success: false, message }
+    if (!res.ok) {
+      return {
+        success: false,
+        data: null as unknown as T,
+        message: json.message || `Request failed with status ${res.status}`,
+      };
+    }
+
+    return json;
+  } catch (err) {
+    // Network error — backend is likely not running
+    console.error(`[API] ${endpoint} failed:`, err);
+    return {
+      success: false,
+      data: null as unknown as T,
+      message: 'Cannot connect to server. Make sure the backend is running on port 5000.',
+    };
+  }
+}
+
+// ─── Helper: build query string from filters ──────────────────────────────────
+
+function buildQuery(params: Record<string, string | undefined>): string {
+  const q = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== '' && value !== 'all') {
+      q.append(key, value);
+    }
+  }
+  return q.toString() ? `?${q.toString()}` : '';
+}
+
+// ============================================================
+// AUTH API
+// ============================================================
+
+export const authApi = {
+  // POST /api/auth/register
+  async register(
+    name: string,
+    email: string,
+    password: string,
+    role: UserRole = 'employee'
+  ): Promise<ApiResponse<User | null>> {
+    const res = await apiFetch<User & { token: string }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ name, email, password, role }),
+    });
+
+    if (res.success && res.data) {
+      const { token, ...user } = res.data;
+      setToken(token);
+      return { ...res, data: user as User };
+    }
+    return { ...res, data: null };
+  },
+
+  // POST /api/auth/login
+  async login(email: string, password: string): Promise<ApiResponse<User | null>> {
+    const res = await apiFetch<User & { token: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+
+    if (res.success && res.data) {
+      const { token, ...user } = res.data;
+      setToken(token);
+      return { ...res, data: user as User };
+    }
+    return { ...res, data: null };
+  },
+
+  // GET /api/auth/me
+  async me(): Promise<ApiResponse<User | null>> {
+    return apiFetch<User>('/auth/me');
+  },
+};
+
+// ============================================================
 // TASK API
-// ============================================
+// ============================================================
 
 export const taskApi = {
   // GET /api/tasks
   async getAll(filters?: TaskFilters): Promise<ApiResponse<Task[]>> {
-    await simulateDelay(300);
-    
-    let tasks = getEnrichedTasks();
-    
-    if (filters) {
-      if (filters.status && filters.status !== 'all') {
-        tasks = tasks.filter(t => t.status === filters.status);
-      }
-      if (filters.priority && filters.priority !== 'all') {
-        tasks = tasks.filter(t => t.priority === filters.priority);
-      }
-      if (filters.assignedTo && filters.assignedTo !== 'all') {
-        tasks = tasks.filter(t => t.assignedTo === filters.assignedTo);
-      }
-      if (filters.search) {
-        const search = filters.search.toLowerCase();
-        tasks = tasks.filter(t => 
-          t.title.toLowerCase().includes(search) || 
-          t.description.toLowerCase().includes(search)
-        );
-      }
-    }
-    
-    return { data: tasks, success: true };
+    const query = buildQuery({
+      status: filters?.status,
+      priority: filters?.priority,
+      assignedTo: filters?.assignedTo,
+      search: filters?.search,
+    });
+    return apiFetch<Task[]>(`/tasks${query}`);
   },
 
   // GET /api/tasks/:id
   async getById(id: string): Promise<ApiResponse<Task | null>> {
-    await simulateDelay(200);
-    const task = getEnrichedTasks().find(t => t.id === id) || null;
-    return { data: task, success: !!task };
+    return apiFetch<Task>(`/tasks/${id}`);
   },
 
   // POST /api/tasks
-  async create(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<ApiResponse<Task>> {
-    await simulateDelay(400);
-    const newTask: Task = {
-      ...task,
-      id: `task-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      assignedToUser: getUserById(task.assignedTo),
-    };
-    mockTasks.push(newTask);
-    return { data: newTask, success: true, message: 'Task created successfully' };
+  async create(
+    task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>
+  ): Promise<ApiResponse<Task>> {
+    return apiFetch<Task>('/tasks', {
+      method: 'POST',
+      body: JSON.stringify(task),
+    });
   },
 
   // PUT /api/tasks/:id
   async update(id: string, updates: Partial<Task>): Promise<ApiResponse<Task>> {
-    await simulateDelay(300);
-    const index = mockTasks.findIndex(t => t.id === id);
-    if (index === -1) {
-      return { data: null as any, success: false, message: 'Task not found' };
-    }
-    mockTasks[index] = { 
-      ...mockTasks[index], 
-      ...updates, 
-      updatedAt: new Date().toISOString(),
-      assignedToUser: getUserById(updates.assignedTo || mockTasks[index].assignedTo),
-    };
-    return { data: mockTasks[index], success: true, message: 'Task updated successfully' };
+    return apiFetch<Task>(`/tasks/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
   },
 
   // DELETE /api/tasks/:id
   async delete(id: string): Promise<ApiResponse<boolean>> {
-    await simulateDelay(300);
-    const index = mockTasks.findIndex(t => t.id === id);
-    if (index === -1) {
-      return { data: false, success: false, message: 'Task not found' };
-    }
-    mockTasks.splice(index, 1);
-    return { data: true, success: true, message: 'Task deleted successfully' };
+    return apiFetch<boolean>(`/tasks/${id}`, { method: 'DELETE' });
   },
 
   // PATCH /api/tasks/:id/status
-  async updateStatus(id: string, status: Task['status']): Promise<ApiResponse<Task>> {
-    return this.update(id, { status });
+  async updateStatus(
+    id: string,
+    status: Task['status']
+  ): Promise<ApiResponse<Task>> {
+    return apiFetch<Task>(`/tasks/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
   },
 };
 
-// ============================================
+// ============================================================
 // REPORT API
-// ============================================
+// ============================================================
 
 export const reportApi = {
   // GET /api/reports
   async getAll(filters?: ReportFilters): Promise<ApiResponse<Report[]>> {
-    await simulateDelay(300);
-    
-    let reports = getEnrichedReports();
-    
-    if (filters) {
-      if (filters.type && filters.type !== 'all') {
-        reports = reports.filter(r => r.type === filters.type);
-      }
-      if (filters.userId && filters.userId !== 'all') {
-        reports = reports.filter(r => r.userId === filters.userId);
-      }
-    }
-    
-    // Sort by date, newest first
-    reports.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    
-    return { data: reports, success: true };
+    const query = buildQuery({
+      type: filters?.type,
+      userId: filters?.userId,
+    });
+    return apiFetch<Report[]>(`/reports${query}`);
   },
 
   // GET /api/reports/:id
   async getById(id: string): Promise<ApiResponse<Report | null>> {
-    await simulateDelay(200);
-    const report = getEnrichedReports().find(r => r.id === id) || null;
-    return { data: report, success: !!report };
+    return apiFetch<Report>(`/reports/${id}`);
   },
 
-  // POST /api/reports
-  async create(report: Omit<Report, 'id' | 'createdAt'>): Promise<ApiResponse<Report>> {
-    await simulateDelay(400);
-    const newReport: Report = {
-      ...report,
-      id: `report-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      user: getUserById(report.userId),
-    };
-    mockReports.push(newReport);
-    return { data: newReport, success: true, message: 'Report submitted successfully' };
+  // POST /api/reports — multipart/form-data for PDF uploads
+  async create(
+    report: Omit<Report, 'id' | 'createdAt'>,
+    files?: File[]
+  ): Promise<ApiResponse<Report>> {
+    const formData = new FormData();
+    formData.append('type', report.type);
+    formData.append('description', report.description);
+
+    if (report.taskIds && report.taskIds.length > 0) {
+      formData.append('taskIds', JSON.stringify(report.taskIds));
+    }
+
+    if (files && files.length > 0) {
+      files.forEach((file) => formData.append('attachments', file));
+    }
+
+    return apiFetch<Report>('/reports', {
+      method: 'POST',
+      body: formData, // No Content-Type header — browser sets multipart boundary automatically
+    });
   },
 };
 
-// ============================================
+// ============================================================
 // USER API
-// ============================================
+// ============================================================
 
 export const userApi = {
   // GET /api/users
   async getAll(): Promise<ApiResponse<User[]>> {
-    await simulateDelay(300);
-    return { data: mockUsers, success: true };
+    return apiFetch<User[]>('/users');
   },
 
   // GET /api/users/:id
   async getById(id: string): Promise<ApiResponse<User | null>> {
-    await simulateDelay(200);
-    const user = mockUsers.find(u => u.id === id) || null;
-    return { data: user, success: !!user };
+    return apiFetch<User>(`/users/${id}`);
   },
 
   // PUT /api/users/:id
   async update(id: string, updates: Partial<User>): Promise<ApiResponse<User>> {
-    await simulateDelay(300);
-    const index = mockUsers.findIndex(u => u.id === id);
-    if (index === -1) {
-      return { data: null as any, success: false, message: 'User not found' };
-    }
-    mockUsers[index] = { ...mockUsers[index], ...updates };
-    return { data: mockUsers[index], success: true, message: 'User updated successfully' };
+    return apiFetch<User>(`/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
   },
 
   // PATCH /api/users/:id/role
   async updateRole(id: string, role: User['role']): Promise<ApiResponse<User>> {
-    return this.update(id, { role });
+    return apiFetch<User>(`/users/${id}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    });
   },
 
-  // PATCH /api/users/:id/status
+  // PATCH /api/users/:id/status — toggle isActive
   async toggleActive(id: string): Promise<ApiResponse<User>> {
-    const user = mockUsers.find(u => u.id === id);
-    if (!user) {
-      return { data: null as any, success: false, message: 'User not found' };
-    }
-    return this.update(id, { isActive: !user.isActive });
+    return apiFetch<User>(`/users/${id}/status`, { method: 'PATCH' });
+  },
+
+  // DELETE /api/users/:id
+  async deleteUser(id: string): Promise<ApiResponse<boolean>> {
+    return apiFetch<boolean>(`/users/${id}`, { method: 'DELETE' });
   },
 };
 
-// ============================================
+// ============================================================
 // DASHBOARD API
-// ============================================
+// ============================================================
 
 export const dashboardApi = {
   // GET /api/dashboard/stats
-  async getStats(userId?: string): Promise<ApiResponse<DashboardStats>> {
-    await simulateDelay(300);
-    
-    let tasks = mockTasks;
-    
-    // If userId provided, filter to that user's tasks
-    if (userId) {
-      tasks = tasks.filter(t => t.assignedTo === userId);
-    }
-    
-    const stats: DashboardStats = {
-      totalTasks: tasks.length,
-      completedTasks: tasks.filter(t => t.status === 'completed').length,
-      pendingTasks: tasks.filter(t => t.status === 'pending').length,
-      inProgressTasks: tasks.filter(t => t.status === 'in-progress').length,
-      totalReports: userId 
-        ? mockReports.filter(r => r.userId === userId).length 
-        : mockReports.length,
-      totalUsers: mockUsers.length,
-    };
-    
-    return { data: stats, success: true };
+  async getStats(_userId?: string): Promise<ApiResponse<DashboardStats>> {
+    return apiFetch<DashboardStats>('/dashboard/stats');
   },
 
-  // GET /api/dashboard/activities
-  async getActivities(limit: number = 10): Promise<ApiResponse<typeof mockActivities>> {
-    await simulateDelay(200);
-    const activities = getEnrichedActivities()
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      .slice(0, limit);
-    return { data: activities, success: true };
-  },
-};
-
-// ============================================
-// AUTH API (Mock Implementation)
-// ============================================
-
-export const authApi = {
-  // POST /api/auth/login
-  async login(email: string, password: string): Promise<ApiResponse<User | null>> {
-    await simulateDelay(500);
-    const user = mockUsers.find(u => u.email === email);
-    if (user && password.length >= 4) { // Simple mock validation
-      return { data: user, success: true, message: 'Login successful' };
-    }
-    return { data: null, success: false, message: 'Invalid credentials' };
-  },
-
-  // POST /api/auth/register
-  async register(name: string, email: string, password: string, role: User['role'] = 'employee'): Promise<ApiResponse<User | null>> {
-    await simulateDelay(500);
-    const exists = mockUsers.find(u => u.email === email);
-    if (exists) {
-      return { data: null, success: false, message: 'Email already registered' };
-    }
-    const newUser: User = {
-      id: `user-${Date.now()}`,
-      name,
-      email,
-      role,
-      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-    };
-    mockUsers.push(newUser);
-    return { data: newUser, success: true, message: 'Registration successful' };
+  // GET /api/dashboard/activities?limit=10
+  async getActivities(
+    limit: number = 10
+  ): Promise<ApiResponse<Activity[]>> {
+    return apiFetch<Activity[]>(`/dashboard/activities?limit=${limit}`);
   },
 };

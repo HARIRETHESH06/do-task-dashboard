@@ -1,26 +1,19 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { User, UserRole, AuthContextType } from '@/types';
-import { authApi } from '@/services/api';
-import { mockUsers } from '@/data/mockData';
+import { authApi, setToken, clearToken } from '@/services/api';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'taskReportingAuth';
 const TOKEN_KEY = 'taskReportingToken';
 const USER_KEY = 'taskReportingUser';
 const ROLE_SWITCH_KEY = 'pendingRoleSwitch';
-
-interface StoredAuth {
-  user: User | null;
-  role: UserRole;
-}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentRole, setCurrentRole] = useState<UserRole>('employee');
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load from localStorage on mount
+  // ── On mount: restore session from localStorage ─────────────────
   useEffect(() => {
     const stored = localStorage.getItem(USER_KEY);
     if (stored) {
@@ -30,46 +23,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setCurrentRole(user.role);
       } catch (e) {
         console.error('Failed to parse stored user:', e);
+        localStorage.removeItem(USER_KEY);
+        clearToken();
       }
     }
     setIsLoading(false);
   }, []);
 
-  // Save to localStorage on change
+  // ── Persist user to localStorage whenever it changes ────────────
   useEffect(() => {
     if (!isLoading) {
       if (currentUser) {
         localStorage.setItem(USER_KEY, JSON.stringify(currentUser));
-        // Note: TOKEN_KEY is set during login, not managed here.
       } else {
         localStorage.removeItem(USER_KEY);
-        localStorage.removeItem(TOKEN_KEY); // Also clear token if user logs out
+        clearToken();
       }
     }
-  }, [currentUser, isLoading]); // currentRole is derived from currentUser.role
+  }, [currentUser, isLoading]);
 
+  // ── LOGIN ────────────────────────────────────────────────────────
   const login = useCallback(async (email: string, password: string): Promise<boolean> => {
     try {
+      // authApi.login calls the real backend, saves the JWT token, and returns the user
       const response = await authApi.login(email, password);
 
       if (response.success && response.data) {
-        const user = response.data; // API returns User directly
+        const user = response.data;
 
-        // Check if there's a pending role switch
+        // Handle pending role switch (requires re-login with correct role)
         const pendingRole = localStorage.getItem(ROLE_SWITCH_KEY);
-
         if (pendingRole) {
-          // Validate that the user is logging in with the correct role
-          if (user.role !== pendingRole) {
-            // Clear the pending role switch
-            localStorage.removeItem(ROLE_SWITCH_KEY);
-            return false; // Login failed - wrong role
-          }
-          // Clear the pending role switch on successful login with correct role
           localStorage.removeItem(ROLE_SWITCH_KEY);
+          if (user.role !== pendingRole) {
+            clearToken();
+            return false; // Wrong role — reject login
+          }
         }
 
-        localStorage.setItem(USER_KEY, JSON.stringify(user));
         setCurrentUser(user);
         setCurrentRole(user.role);
         return true;
@@ -82,49 +73,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  // ── REGISTER ─────────────────────────────────────────────────────
   const register = useCallback(async (
     name: string,
     email: string,
     password: string,
     role: UserRole = 'employee'
   ): Promise<boolean> => {
-    const response = await authApi.register(name, email, password, role);
-    if (response.success && response.data) {
-      setCurrentUser(response.data);
-      setCurrentRole(response.data.role);
-      return true;
+    try {
+      const response = await authApi.register(name, email, password, role);
+      if (response.success && response.data) {
+        setCurrentUser(response.data);
+        setCurrentRole(response.data.role);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Register error:', error);
+      return false;
     }
-    return false;
   }, []);
 
+  // ── LOGOUT ───────────────────────────────────────────────────────
   const logout = useCallback(() => {
     setCurrentUser(null);
     setCurrentRole('employee');
     localStorage.removeItem(USER_KEY);
-    localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(ROLE_SWITCH_KEY);
+    clearToken();
   }, []);
 
-  // Secure role switching - requires re-authentication
+  // ── ROLE SWITCH (forces re-login) ────────────────────────────────
   const requestRoleSwitch = useCallback((targetRole: UserRole) => {
-    // Store the requested role
     localStorage.setItem(ROLE_SWITCH_KEY, targetRole);
-    // Log out the user
     logout();
   }, [logout]);
 
-  // Permission helper methods
-  const canCreateTasks = useCallback(() => {
-    return currentRole === 'admin' || currentRole === 'manager';
-  }, [currentRole]);
-
-  const canAssignTasks = useCallback(() => {
-    return currentRole === 'admin' || currentRole === 'manager';
-  }, [currentRole]);
-
-  const canModifyAssignments = useCallback(() => {
-    return currentRole === 'admin' || currentRole === 'manager';
-  }, [currentRole]);
+  // ── PERMISSION HELPERS ───────────────────────────────────────────
+  const canCreateTasks = useCallback(() => currentRole === 'admin' || currentRole === 'manager', [currentRole]);
+  const canAssignTasks = useCallback(() => currentRole === 'admin' || currentRole === 'manager', [currentRole]);
+  const canModifyAssignments = useCallback(() => currentRole === 'admin' || currentRole === 'manager', [currentRole]);
 
   const value: AuthContextType = {
     currentUser,

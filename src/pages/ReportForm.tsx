@@ -133,12 +133,16 @@ const ReportForm: React.FC = () => {
     setIsSaving(true);
 
     try {
-      const result = await reportApi.create({
-        type: formData.type,
-        description: formData.description.trim(),
-        userId: currentUser?.id || 'user-1',
-        taskIds: formData.taskIds.length > 0 ? formData.taskIds : undefined,
-      });
+      // Pass File[] as second arg so reportApi uses FormData + multipart upload
+      const result = await reportApi.create(
+        {
+          type: formData.type,
+          description: formData.description.trim(),
+          userId: currentUser?.id || '',
+          taskIds: formData.taskIds.length > 0 ? formData.taskIds : undefined,
+        },
+        formData.attachments  // ← real File objects sent to backend
+      );
 
       if (result.success) {
         toast({
@@ -152,7 +156,7 @@ const ReportForm: React.FC = () => {
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Failed to submit report.',
+        description: 'Failed to submit report. Make sure the backend is running.',
         variant: 'destructive',
       });
     } finally {
