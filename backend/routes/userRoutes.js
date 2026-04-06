@@ -11,26 +11,25 @@ const {
 const { protect } = require('../middleware/authMiddleware');
 const { authorize } = require('../middleware/roleMiddleware');
 
-// All user routes require auth + admin role
-router.use(protect, authorize('admin'));
+// All user routes require authentication
+router.use(protect);
 
-// GET  /api/users
-// POST would be via /api/auth/register
-router.get('/', getUsers);
+// GET  /api/users — Admin & Manager (needed for task assignment dropdown)
+router.get('/', authorize('admin', 'manager'), getUsers);
 
-// GET  /api/users/:id
-router.get('/:id', getUserById);
+// GET  /api/users/:id — Admin & Manager
+router.get('/:id', authorize('admin', 'manager'), getUserById);
 
-// PUT  /api/users/:id
-router.put('/:id', updateUser);
+// PUT  /api/users/:id — Admin only
+router.put('/:id', authorize('admin'), updateUser);
 
-// DELETE /api/users/:id
-router.delete('/:id', deleteUser);
+// DELETE /api/users/:id — Admin only
+router.delete('/:id', authorize('admin'), deleteUser);
 
-// PATCH /api/users/:id/status  — toggle isActive
-router.patch('/:id/status', toggleActive);
+// PATCH /api/users/:id/status  — toggle isActive — Admin only
+router.patch('/:id/status', authorize('admin'), toggleActive);
 
-// PATCH /api/users/:id/role
-router.patch('/:id/role', updateRole);
+// PATCH /api/users/:id/role — Admin only
+router.patch('/:id/role', authorize('admin'), updateRole);
 
 module.exports = router;

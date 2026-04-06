@@ -76,6 +76,12 @@ const TaskForm: React.FC = () => {
       const usersRes = await userApi.getAll();
       if (usersRes.success) {
         setUsers(usersRes.data.filter(u => u.isActive));
+      } else {
+        toast({
+          title: 'Could not load users',
+          description: usersRes.message || 'Failed to fetch user list for assignment.',
+          variant: 'destructive',
+        });
       }
 
       if (isEditMode) {

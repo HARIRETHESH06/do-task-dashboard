@@ -3,10 +3,13 @@ const logActivity = require('../utils/activityLogger');
 
 // ─── @desc   Get all users
 // ─── @route  GET /api/users
-// ─── @access Admin only
+// ─── @access Admin (all users), Manager (active users only — for task assignment)
 const getUsers = async (req, res, next) => {
     try {
-        const users = await User.find().sort({ createdAt: -1 });
+        // Managers only see active users (for assigning tasks)
+        // Admins see everyone (for user management)
+        const filter = req.user.role === 'manager' ? { isActive: true } : {};
+        const users = await User.find(filter).sort({ createdAt: -1 });
         res.json({
             success: true,
             data: users.map((u) => u.toPublicJSON()),
