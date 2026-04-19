@@ -56,15 +56,6 @@ app.use('/api/tasks', taskRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
-// Root health-check
-app.get('/', (req, res) => {
-    res.json({
-        success: true,
-        message: 'DO_TASK API is running',
-        version: '1.0.0',
-    });
-});
-
 
 // Hello world route for testing deployment
 app.get('/api/hello', (req, res) => {
