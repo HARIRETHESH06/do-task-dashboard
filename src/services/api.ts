@@ -1,7 +1,7 @@
 /**
  * API Service Layer — REAL backend implementation
  *
- * All calls go to /api/* which Vite proxies to http://localhost:5000 in dev.
+ * All calls go to /api/* which is directed to https://do-task-dashboard-xftm.vercel.app
  * JWT token is read from localStorage and sent as Authorization: Bearer <token>.
  */
 
@@ -48,7 +48,7 @@ async function apiFetch<T>(
   }
 
   try {
-    const BASE = import.meta.env.VITE_API_URL ?? '';
+    const BASE = import.meta.env.VITE_API_URL ?? 'https://do-task-dashboard-xftm.vercel.app';
     const res = await fetch(`${BASE}/api${endpoint}`, { ...options, headers });
     const json: ApiResponse<T> = await res.json();
 
@@ -63,12 +63,12 @@ async function apiFetch<T>(
 
     return json;
   } catch (err) {
-    // Network error — backend is likely not running
+    // Network error — backend is likely not reachable
     console.error(`[API] ${endpoint} failed:`, err);
     return {
       success: false,
       data: null as unknown as T,
-      message: 'Cannot connect to server. Make sure the backend is running on port 5000.',
+      message: 'Cannot connect to server. Make sure the backend is reachable.',
     };
   }
 }
