@@ -48,7 +48,8 @@ async function apiFetch<T>(
   }
 
   try {
-    const res = await fetch(`/api${endpoint}`, { ...options, headers });
+    const BASE = import.meta.env.VITE_API_URL ?? '';
+    const res = await fetch(`${BASE}/api${endpoint}`, { ...options, headers });
     const json: ApiResponse<T> = await res.json();
 
     // Surface HTTP errors as { success: false, message }
