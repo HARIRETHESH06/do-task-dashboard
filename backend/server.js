@@ -65,6 +65,14 @@ app.get('/', (req, res) => {
     });
 });
 
+// Hello world route for testing deployment
+app.get('/api/hello', (req, res) => {
+    res.json({
+        success: true,
+        message: 'Hello World from Vercel Serverless!'
+    });
+});
+
 // ─── ERROR HANDLING ───────────────────────────────────────────────────────────
 
 app.use(notFound);
