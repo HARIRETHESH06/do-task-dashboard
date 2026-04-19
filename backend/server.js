@@ -73,8 +73,16 @@ app.use(errorHandler);
 // ─── START SERVER ─────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-    console.log(
-        `🚀 Server running in ${process.env.NODE_ENV} mode on port ${PORT}`
-    );
-});
+
+// Only listen locally or on non-Vercel environments (like Render).
+// Vercel serverless functions handle the routing internally via module.exports.
+if (!process.env.VERCEL) {
+    app.listen(PORT, () => {
+        console.log(
+            `🚀 Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`
+        );
+    });
+}
+
+// Export the app for Vercel
+module.exports = app;
