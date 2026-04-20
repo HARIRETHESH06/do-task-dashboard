@@ -48,7 +48,7 @@ async function apiFetch<T>(
   }
 
   try {
-    const BASE = import.meta.env.VITE_API_URL ?? 'https://do-task-dashboard-xftm.vercel.app';
+    const BASE = import.meta.env.VITE_API_URL ?? '';
     const res = await fetch(`${BASE}/api${endpoint}`, { ...options, headers });
     const json: ApiResponse<T> = await res.json();
 

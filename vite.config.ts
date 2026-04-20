@@ -14,11 +14,11 @@ export default defineConfig(({ mode }) => ({
     // Proxy all /api requests to the Express backend
     proxy: {
       "/api": {
-        target: "https://do-task-dashboard-xftm.vercel.app",
+        target: "http://localhost:5000",
         changeOrigin: true,
       },
       "/uploads": {
-        target: "https://do-task-dashboard-xftm.vercel.app",
+        target: "http://localhost:5000",
         changeOrigin: true,
       },
     },
