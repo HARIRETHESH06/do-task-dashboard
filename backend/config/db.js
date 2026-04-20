@@ -14,7 +14,7 @@ const connectDB = async () => {
             console.warn("⚠️ MONGO_URI is missing from environment variables!");
             return;
         }
-        
+
         // Add recommended serverless mongoose options
         const conn = await mongoose.connect(process.env.MONGO_URI, {
             serverSelectionTimeoutMS: 5000,
@@ -24,6 +24,7 @@ const connectDB = async () => {
         console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
     } catch (error) {
         console.error(`❌ MongoDB Connection Error: ${error.message}`);
+        // Avoid process.exit(1) here as it crashes Vercel's serverless pipeline completely
     }
 };
 
